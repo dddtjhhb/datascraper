@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shiftwatch"
+version = "0.1.0"
+description = "Reproducible evaluation and monitoring of model reliability under distribution shift"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+
+[project.scripts]
+shiftwatch = "shiftwatch.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
