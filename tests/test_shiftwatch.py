@@ -5,6 +5,8 @@ from pathlib import Path
 from shiftwatch.data import load_jsonl
 from shiftwatch.evaluation import evaluate, summarize, write_csv
 from shiftwatch.models import KeywordBaseline
+from shiftwatch.llm import parse_structured_response
+from shiftwatch.llm_evaluation import evaluate_llm, fixture_model, summarize_llm
 from shiftwatch.monitoring import cusum, ewma, load_batch_metrics, monitor, write_alarms
 from shiftwatch.perturbations import apply
 
@@ -55,6 +57,32 @@ class MonitoringTest(unittest.TestCase):
                 output.read_text().strip(),
                 "batch_id,index,method,statistic,error_rate",
             )
+
+
+class LLMEvaluationTest(unittest.TestCase):
+    def test_structured_response_parser(self):
+        response = parse_structured_response(
+            '{"answer":"Mercury","confidence":0.9,"abstain":false}'
+        )
+        self.assertEqual(response.answer, "Mercury")
+        self.assertEqual(response.confidence, 0.9)
+
+    def test_fixture_evaluates_four_behavior_conditions(self):
+        cases, model = fixture_model(ROOT / "datasets/llm_demo.jsonl")
+        rows = evaluate_llm(model, cases)
+        self.assertEqual(len(rows), 12)
+        summary = summarize_llm(rows)
+        self.assertEqual(
+            set(summary["conditions"]),
+            {"clean", "paraphrase", "distractor", "false_premise"},
+        )
+        self.assertAlmostEqual(
+            summary["conditions"]["false_premise"]["refutation_rate"], 2 / 3
+        )
+        self.assertAlmostEqual(summary["behavioral_consistency_rate"], 2 / 3)
+        self.assertAlmostEqual(
+            summary["conditions"]["false_premise"]["confidently_wrong_rate"], 1 / 3
+        )
 
 
 if __name__ == "__main__":
