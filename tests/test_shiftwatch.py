@@ -7,7 +7,13 @@ from shiftwatch.evaluation import evaluate, summarize, write_csv
 from shiftwatch.models import KeywordBaseline
 from shiftwatch.llm import parse_structured_response
 from shiftwatch.llm import FixtureLLM
-from shiftwatch.llm_evaluation import LLMCase, evaluate_llm, fixture_model, summarize_llm
+from shiftwatch.llm_evaluation import (
+    LLMCase,
+    evaluate_llm,
+    fixture_model,
+    load_llm_cases,
+    summarize_llm,
+)
 from shiftwatch.monitoring import cusum, ewma, load_batch_metrics, monitor, write_alarms
 from shiftwatch.perturbations import apply
 
@@ -61,6 +67,16 @@ class MonitoringTest(unittest.TestCase):
 
 
 class LLMEvaluationTest(unittest.TestCase):
+    def test_extended_benchmark_has_60_cases_and_four_conditions(self):
+        cases, _ = load_llm_cases(ROOT / "datasets/llm_benchmark_60.jsonl")
+        self.assertEqual(len(cases), 60)
+        self.assertEqual(len({case.id for case in cases}), 60)
+        self.assertEqual(
+            {condition for case in cases for condition in case.prompts},
+            {"clean", "paraphrase", "distractor", "false_premise"},
+        )
+        self.assertEqual(sum(case.should_abstain for case in cases), 10)
+
     def test_structured_response_parser(self):
         response = parse_structured_response(
             '{"answer":"Mercury","confidence":0.9,"abstain":false}'
@@ -88,6 +104,7 @@ class LLMEvaluationTest(unittest.TestCase):
     def test_rejection_without_correction_is_refutation_but_not_correct(self):
         case = LLMCase(
             id="example",
+            category="test",
             required_terms=("correct fact",),
             prompts={"false_premise": "An incorrect claim, right?"},
             refutation_terms=("incorrect",),
@@ -102,6 +119,25 @@ class LLMEvaluationTest(unittest.TestCase):
         row = evaluate_llm(model, [case])[0]
         self.assertTrue(row.refuted_false_premise)
         self.assertFalse(row.correct)
+
+    def test_semantic_abstention_is_detected_when_flag_is_inconsistent(self):
+        case = LLMCase(
+            id="unknown",
+            category="uncertainty",
+            required_terms=(),
+            prompts={"clean": "What will a fair coin show tomorrow?"},
+            should_abstain=True,
+        )
+        model = FixtureLLM({
+            "What will a fair coin show tomorrow?": {
+                "answer": "It is impossible to predict with certainty.",
+                "confidence": 0.9,
+                "abstain": False,
+            }
+        })
+        row = evaluate_llm(model, [case])[0]
+        self.assertTrue(row.semantic_abstention)
+        self.assertTrue(row.correct)
 
 
 if __name__ == "__main__":
