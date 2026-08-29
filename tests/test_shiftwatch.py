@@ -5,7 +5,7 @@ from pathlib import Path
 from shiftwatch.data import load_jsonl
 from shiftwatch.evaluation import evaluate, summarize, write_csv
 from shiftwatch.models import KeywordBaseline
-from shiftwatch.monitoring import cusum, ewma
+from shiftwatch.monitoring import cusum, ewma, load_batch_metrics, monitor, write_alarms
 from shiftwatch.perturbations import apply
 
 
@@ -39,6 +39,22 @@ class MonitoringTest(unittest.TestCase):
         values = [0.05] * 8 + [0.40] * 5
         self.assertTrue(cusum(values, target=0.05))
         self.assertTrue(ewma(values, target=0.05))
+
+    def test_batch_series_connects_to_named_alarms(self):
+        metrics = load_batch_metrics(ROOT / "datasets/demo_batch_metrics.csv")
+        alarms = monitor(metrics, target=0.05)
+        self.assertTrue(alarms)
+        self.assertIn("batch_id", alarms[0])
+        self.assertGreaterEqual(alarms[0]["index"], 8)
+
+    def test_alarm_export_has_header_even_without_alarms(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "alarms.csv"
+            write_alarms([], output)
+            self.assertEqual(
+                output.read_text().strip(),
+                "batch_id,index,method,statistic,error_rate",
+            )
 
 
 if __name__ == "__main__":
