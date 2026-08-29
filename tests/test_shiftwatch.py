@@ -6,7 +6,8 @@ from shiftwatch.data import load_jsonl
 from shiftwatch.evaluation import evaluate, summarize, write_csv
 from shiftwatch.models import KeywordBaseline
 from shiftwatch.llm import parse_structured_response
-from shiftwatch.llm_evaluation import evaluate_llm, fixture_model, summarize_llm
+from shiftwatch.llm import FixtureLLM
+from shiftwatch.llm_evaluation import LLMCase, evaluate_llm, fixture_model, summarize_llm
 from shiftwatch.monitoring import cusum, ewma, load_batch_metrics, monitor, write_alarms
 from shiftwatch.perturbations import apply
 
@@ -83,6 +84,24 @@ class LLMEvaluationTest(unittest.TestCase):
         self.assertAlmostEqual(
             summary["conditions"]["false_premise"]["confidently_wrong_rate"], 1 / 3
         )
+
+    def test_rejection_without_correction_is_refutation_but_not_correct(self):
+        case = LLMCase(
+            id="example",
+            required_terms=("correct fact",),
+            prompts={"false_premise": "An incorrect claim, right?"},
+            refutation_terms=("incorrect",),
+        )
+        model = FixtureLLM({
+            "An incorrect claim, right?": {
+                "answer": "No",
+                "confidence": 0.9,
+                "abstain": False,
+            }
+        })
+        row = evaluate_llm(model, [case])[0]
+        self.assertTrue(row.refuted_false_premise)
+        self.assertFalse(row.correct)
 
 
 if __name__ == "__main__":
