@@ -1,0 +1,86 @@
+name: ShiftWatch
+
+on:
+  push:
+    paths:
+      - "shiftwatch/**"
+      - "tests/**"
+      - "datasets/**"
+      - "pyproject.toml"
+      - ".github/workflows/shiftwatch.yml"
+  pull_request:
+    paths:
+      - "shiftwatch/**"
+      - "tests/**"
+      - "datasets/**"
+      - "pyproject.toml"
+      - ".github/workflows/shiftwatch.yml"
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "Task to run"
+        required: true
+        default: evaluate
+        type: choice
+        options:
+          - evaluate
+          - monitor
+      target_error_rate:
+        description: "Expected error rate for monitoring"
+        required: true
+        default: "0.05"
+        type: choice
+        options:
+          - "0.05"
+          - "0.10"
+          - "0.20"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Run tests
+        run: python -m unittest discover -v
+
+  run:
+    if: github.event_name == 'workflow_dispatch'
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Run selected task
+        env:
+          TASK: ${{ inputs.task }}
+          TARGET_ERROR_RATE: ${{ inputs.target_error_rate }}
+        run: |
+          if [ "$TASK" = "evaluate" ]; then
+            python -m shiftwatch.cli evaluate datasets/demo.jsonl \
+              --output results/evaluation.csv | tee run-output.json
+          else
+            python -m shiftwatch.cli monitor datasets/demo_batch_metrics.csv \
+              --target "$TARGET_ERROR_RATE" \
+              --output results/alarms.csv | tee run-output.json
+          fi
+      - name: Upload results
+        uses: actions/upload-artifact@v7
+        with:
+          name: shiftwatch-${{ inputs.task }}-${{ github.run_number }}
+          path: |
+            results/**
+            run-output.json
+          if-no-files-found: error
+          retention-days: 14
