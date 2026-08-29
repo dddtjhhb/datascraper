@@ -5,6 +5,14 @@ from .data import load_jsonl
 from .evaluation import evaluate, summarize, write_csv
 from .models import KeywordBaseline
 from .monitoring import load_batch_metrics, monitor, write_alarms
+from .llm import OllamaLLM
+from .llm_evaluation import (
+    evaluate_llm,
+    fixture_model,
+    load_llm_cases,
+    summarize_llm,
+    write_llm_csv,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -15,6 +23,15 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate_parser.add_argument("dataset", help="JSONL file with id, text, and label")
     evaluate_parser.add_argument("--output", default="results/evaluation.csv")
     evaluate_parser.add_argument("--seed", type=int, default=7)
+
+    llm_parser = commands.add_parser(
+        "llm-evaluate", help="evaluate LLM behavior across prompt variants"
+    )
+    llm_parser.add_argument("dataset", help="JSONL file containing LLM evaluation cases")
+    llm_parser.add_argument("--backend", choices=("fixture", "ollama"), default="fixture")
+    llm_parser.add_argument("--model", help="Ollama model name, for example llama3.2:3b")
+    llm_parser.add_argument("--base-url", default="http://localhost:11434")
+    llm_parser.add_argument("--output", default="results/llm_evaluation.csv")
 
     monitor_parser = commands.add_parser("monitor", help="monitor an ordered batch error-rate series")
     monitor_parser.add_argument("metrics", help="CSV file with batch_id and error_rate")
@@ -34,6 +51,17 @@ def main(argv=None) -> int:
         rows = evaluate(KeywordBaseline(), examples, seed=args.seed)
         write_csv(rows, args.output)
         result = {"summary": summarize(rows), "output": args.output}
+    elif args.command == "llm-evaluate":
+        if args.backend == "fixture":
+            cases, model = fixture_model(args.dataset)
+        else:
+            if not args.model:
+                raise SystemExit("--model is required with --backend ollama")
+            cases, _ = load_llm_cases(args.dataset)
+            model = OllamaLLM(args.model, base_url=args.base_url)
+        rows = evaluate_llm(model, cases)
+        write_llm_csv(rows, args.output)
+        result = {"summary": summarize_llm(rows), "output": args.output}
     else:
         metrics = load_batch_metrics(args.metrics)
         alarms = monitor(
