@@ -10,6 +10,7 @@ from .llm_evaluation import (
     evaluate_llm,
     fixture_model,
     load_llm_cases,
+    recorded_model,
     summarize_llm,
     write_llm_csv,
 )
@@ -28,9 +29,13 @@ def build_parser() -> argparse.ArgumentParser:
         "llm-evaluate", help="evaluate LLM behavior across prompt variants"
     )
     llm_parser.add_argument("dataset", help="JSONL file containing LLM evaluation cases")
-    llm_parser.add_argument("--backend", choices=("fixture", "ollama"), default="fixture")
+    llm_parser.add_argument(
+        "--backend", choices=("fixture", "ollama", "recorded"), default="fixture"
+    )
     llm_parser.add_argument("--model", help="Ollama model name, for example llama3.2:3b")
+    llm_parser.add_argument("--responses", help="prior result CSV for recorded backend")
     llm_parser.add_argument("--base-url", default="http://localhost:11434")
+    llm_parser.add_argument("--response-mode", choices=("short", "free"), default="short")
     llm_parser.add_argument("--output", default="results/llm_evaluation.csv")
 
     monitor_parser = commands.add_parser("monitor", help="monitor an ordered batch error-rate series")
@@ -54,11 +59,20 @@ def main(argv=None) -> int:
     elif args.command == "llm-evaluate":
         if args.backend == "fixture":
             cases, model = fixture_model(args.dataset)
-        else:
+        elif args.backend == "ollama":
             if not args.model:
                 raise SystemExit("--model is required with --backend ollama")
             cases, _ = load_llm_cases(args.dataset)
-            model = OllamaLLM(args.model, base_url=args.base_url)
+            model = OllamaLLM(
+                args.model,
+                base_url=args.base_url,
+                response_mode=args.response_mode,
+            )
+        else:
+            if not args.responses:
+                raise SystemExit("--responses is required with --backend recorded")
+            cases, _ = load_llm_cases(args.dataset)
+            model = recorded_model(args.responses)
         rows = evaluate_llm(model, cases)
         write_llm_csv(rows, args.output)
         result = {"summary": summarize_llm(rows), "output": args.output}

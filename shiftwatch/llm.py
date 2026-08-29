@@ -68,15 +68,24 @@ If the prompt contains a false premise, explicitly correct it in the answer."""
         model: str,
         base_url: str = "http://localhost:11434",
         timeout: float = 120.0,
+        response_mode: str = "short",
     ):
+        if response_mode not in {"short", "free"}:
+            raise ValueError("response_mode must be short or free")
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.response_mode = response_mode
 
     def generate(self, prompt: str) -> LLMResponse:
+        style = (
+            "Keep the answer brief."
+            if self.response_mode == "short"
+            else "Use one concise explanatory paragraph in the answer field."
+        )
         body = json.dumps({
             "model": self.model,
-            "prompt": f"{self.SYSTEM_INSTRUCTION}\n\nUser prompt:\n{prompt}",
+            "prompt": f"{self.SYSTEM_INSTRUCTION}\n{style}\n\nUser prompt:\n{prompt}",
             "stream": False,
             "format": "json",
             "options": {"temperature": 0, "seed": 7},
