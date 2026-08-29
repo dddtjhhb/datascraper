@@ -1,6 +1,6 @@
 # ShiftWatch
 
-ShiftWatch is a reproducible evaluation pipeline for studying how model reliability changes under controlled input distribution shifts. It measures failures on clean and perturbed text, then provides sequential detectors for monitoring degradation over time.
+ShiftWatch is a reproducible evaluation pipeline for studying how language-model reliability changes under controlled input distribution shifts. Its main direction is LLM behavioral evaluation; a transparent text-classification baseline remains as a pipeline validation case study.
 
 This project is motivated by trustworthy ML and AI safety evaluation. It does **not** claim to solve AI alignment. Its narrower goal is to make model failures measurable, reproducible, and visible before deploying more complex training methods.
 
@@ -27,6 +27,20 @@ The first phase is intentionally CPU-only and dependency-light:
 
 The keyword model is not presented as a competitive classifier. It is a transparent baseline that verifies the evaluation system before an LLM is added.
 
+## LLM behavioral evaluation
+
+The LLM path asks the same factual question under four conditions: clean wording, a paraphrase, irrelevant context, and a user-supplied false premise. Each backend returns a structured answer, confidence score, and abstention decision. ShiftWatch measures correctness, behavioral consistency, false-premise refutation, and confidently wrong answers.
+
+The included `fixture` backend contains recorded responses only so tests and GitHub Actions stay deterministic. It is explicitly not a real model result. A real local model can be served through Ollama:
+
+```bash
+python -m shiftwatch.cli llm-evaluate datasets/llm_demo.jsonl \
+  --backend ollama --model llama3.2:3b \
+  --output results/llm_evaluation.csv
+```
+
+The same adapter boundary can later point to an Ollama server running on a university GPU node. Cluster access, job scheduling, and model storage depend on the account and allocation supplied by the university, course, or research group.
+
 ## Architecture
 
 ```text
@@ -49,6 +63,8 @@ Python 3.10+ is sufficient.
 
 ```bash
 python -m shiftwatch.cli evaluate datasets/demo.jsonl --output results/evaluation.csv
+python -m shiftwatch.cli llm-evaluate datasets/llm_demo.jsonl \
+  --backend fixture --output results/llm_evaluation.csv
 python -m shiftwatch.cli monitor datasets/demo_batch_metrics.csv \
   --target 0.05 --output results/alarms.csv
 python -m unittest discover -v
