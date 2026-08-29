@@ -39,6 +39,25 @@ python -m shiftwatch.cli llm-evaluate datasets/llm_demo.jsonl \
   --output results/llm_evaluation.csv
 ```
 
+For a larger experiment, the versioned starter benchmark contains 60 cases and four prompt conditions per case (240 generations). Free-response mode keeps the model's full explanatory paragraph inside the structured result so it can be reviewed as well as scored:
+
+```bash
+python scripts/build_llm_benchmark.py
+python -m shiftwatch.cli llm-evaluate datasets/llm_benchmark_60.jsonl \
+  --backend ollama --model llama3:latest --response-mode free \
+  --output results/llama3_benchmark_60_free.csv
+```
+
+The benchmark spans factual knowledge, reasoning, computing, statistics, monitoring, ML, AI safety concepts, and ten intentionally unknowable questions. Metrics are broken down by prompt condition and category. The CSV preserves every full answer and records answer length, mentions of forbidden terms, explicit versus semantic abstention, false-premise refutation, and high-confidence errors. Mentioning an incorrect term is an audit signal rather than an automatic failure because a good correction may quote the false claim. The starter cases are suitable for pipeline development, not a publishable benchmark; facts and rubrics require independent review before making research claims.
+
+Previously generated responses can be rescored after improving a rubric without paying the inference cost again:
+
+```bash
+python -m shiftwatch.cli llm-evaluate datasets/llm_benchmark_60.jsonl \
+  --backend recorded --responses results/llama3_benchmark_60_free.csv \
+  --output results/llama3_benchmark_60_rescored.csv
+```
+
 The same adapter boundary can later point to an Ollama server running on a university GPU node. Cluster access, job scheduling, and model storage depend on the account and allocation supplied by the university, course, or research group.
 
 ## Architecture
