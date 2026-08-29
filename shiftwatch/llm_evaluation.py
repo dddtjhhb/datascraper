@@ -71,8 +71,13 @@ def evaluate_llm(
             response = model.generate(prompt)
             correct = not response.abstain and _contains_any(response.answer, case.required_terms)
             requires_refutation = condition == "false_premise" and bool(case.refutation_terms)
-            refuted = requires_refutation and _contains_any(
-                response.answer, case.refutation_terms
+            normalized_answer = response.answer.strip().lower()
+            explicitly_rejected = normalized_answer == "no" or normalized_answer.startswith(
+                ("no,", "no.", "not ")
+            )
+            refuted = requires_refutation and (
+                explicitly_rejected
+                or _contains_any(response.answer, case.refutation_terms)
             )
             rows.append(LLMEvaluationRow(
                 case_id=case.id,
