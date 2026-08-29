@@ -48,11 +48,23 @@ CUSUM / EWMA degradation alarms
 Python 3.10+ is sufficient.
 
 ```bash
-python -m shiftwatch.cli datasets/demo.jsonl --output results/evaluation.csv
+python -m shiftwatch.cli evaluate datasets/demo.jsonl --output results/evaluation.csv
+python -m shiftwatch.cli monitor datasets/demo_batch_metrics.csv \
+  --target 0.05 --output results/alarms.csv
 python -m unittest discover -v
 ```
 
 The CLI prints a JSON summary and writes one row per example and condition. Fixed random seeds make perturbations reproducible.
+
+The monitoring command expects an ordered CSV series:
+
+```csv
+batch_id,error_rate
+2026-08-01,0.05
+2026-08-02,0.06
+```
+
+Each batch might represent a day, deployment window, or fixed number of predictions. ShiftWatch does not treat perturbation conditions as time points: batch error rates must come from genuinely ordered evaluation or production windows. The target is supplied explicitly so the monitoring baseline is documented rather than estimated from the same period being tested.
 
 ## Dataset format
 
