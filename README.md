@@ -66,6 +66,18 @@ batch_id,error_rate
 
 Each batch might represent a day, deployment window, or fixed number of predictions. ShiftWatch does not treat perturbation conditions as time points: batch error rates must come from genuinely ordered evaluation or production windows. The target is supplied explicitly so the monitoring baseline is documented rather than estimated from the same period being tested.
 
+## Run without a local terminal
+
+The `ShiftWatch` GitHub Actions workflow provides a browser-based entry point:
+
+1. Open the repository's **Actions** tab.
+2. Select **ShiftWatch**.
+3. Choose **Run workflow**.
+4. Select `evaluate` or `monitor`; monitoring also accepts a target error rate.
+5. After the run finishes, download the `shiftwatch-*` artifact from the run page.
+
+Every push and pull request also runs the automated test suite. Manual runs execute tests first, then generate a CSV result and a JSON summary. Artifacts are retained for 14 days and require no credentials or external model API.
+
 ## Dataset format
 
 One manually reviewed example per line:
