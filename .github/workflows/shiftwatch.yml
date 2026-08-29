@@ -24,6 +24,7 @@ on:
         type: choice
         options:
           - evaluate
+          - llm-evaluate
           - monitor
       target_error_rate:
         description: "Expected error rate for monitoring"
@@ -70,6 +71,10 @@ jobs:
           if [ "$TASK" = "evaluate" ]; then
             python -m shiftwatch.cli evaluate datasets/demo.jsonl \
               --output results/evaluation.csv | tee run-output.json
+          elif [ "$TASK" = "llm-evaluate" ]; then
+            python -m shiftwatch.cli llm-evaluate datasets/llm_demo.jsonl \
+              --backend fixture \
+              --output results/llm_evaluation.csv | tee run-output.json
           else
             python -m shiftwatch.cli monitor datasets/demo_batch_metrics.csv \
               --target "$TARGET_ERROR_RATE" \
