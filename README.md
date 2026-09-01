@@ -2,6 +2,8 @@
 
 ShiftWatch is a reproducible evaluation pipeline for studying how language-model reliability changes under controlled input distribution shifts. Its main direction is LLM behavioral evaluation; a transparent text-classification baseline remains as a pipeline validation case study.
 
+The project now also includes an initial code-agent regression-testing module. It measures whether generated Python implementations continue to pass executable tests when task prompts receive irrelevant context, false premises, or long benign context.
+
 This project is motivated by trustworthy ML and AI safety evaluation. It does **not** claim to solve AI alignment. Its narrower goal is to make model failures measurable, reproducible, and visible before deploying more complex training methods.
 
 ## Research questions
@@ -60,6 +62,36 @@ python -m shiftwatch.cli llm-evaluate datasets/llm_benchmark_60.jsonl \
 
 The same adapter boundary can later point to an Ollama server running on a university GPU node. Cluster access, job scheduling, and model storage depend on the account and allocation supplied by the university, course, or research group.
 
+## Code-agent evaluation
+
+The `code-evaluate` command accepts a compact HumanEval/MBPP-style JSONL contract: task id, prompt, entry point, executable assertions, a task-specific false premise, and optional deterministic fixture candidates. Each task is evaluated under four conditions and can be repeated to measure run-to-run stability:
+
+- `clean`: original task;
+- `irrelevant_context`: unrelated project information is prepended;
+- `false_premise`: a task-specific incorrect implementation assumption is supplied;
+- `long_context`: benign instructions are repeated before the task.
+
+```bash
+python -m shiftwatch.cli code-evaluate datasets/code_tasks_demo.jsonl \
+  --backend fixture --repeats 3 \
+  --output results/code_evaluation.csv
+
+# Real local model (slow; requires Ollama and an installed model)
+python -m shiftwatch.cli code-evaluate datasets/code_tasks_demo.jsonl \
+  --backend ollama --model llama3:latest --repeats 3 \
+  --output results/llama3_code_evaluation.csv
+```
+
+Reports include pass rate, task-level bootstrap confidence intervals, abstention, generation latency, optional cost, repeated-run outcome stability, and an executable failure taxonomy (`syntax_error`, `missing_entry_point`, `policy_rejection`, `timeout`, `assertion_failure`, and `runtime_error`). Full candidate code is retained for manual failure review.
+
+The bundled four-task dataset is a software test and demonstration, not a research benchmark. The next study milestone is a frozen, independently reviewed 30-50 task subset from a public benchmark, two model or agent configurations, 3-5 runs per task, and manual taxonomy assignment for 20-30 failures.
+
+An initial 16-generation local Llama 3 smoke test passed 4/4 clean, 4/4 irrelevant-context, 2/4 false-premise, and 4/4 long-context cases. Mean generation latency increased from 2.62 seconds on clean prompts to 11.65 seconds under the synthetic long context. These numbers validate the pipeline only; see [`docs/code_agent_smoke_analysis.md`](docs/code_agent_smoke_analysis.md) for the two manually reviewed failures and limitations.
+
+### Execution safety
+
+Generated code is untrusted. ShiftWatch rejects imports, dynamic evaluation, file access calls, dunder attributes, and missing entry points before execution. Accepted candidates run with isolated Python, a temporary working directory, a wall-clock timeout, and best-effort Unix resource limits. These controls reduce risk but are **not a security boundary**. Do not run untrusted model output on a personal or production machine; use a disposable container or VM for real benchmark runs.
+
 ## Architecture
 
 ```text
@@ -70,6 +102,10 @@ controlled perturbations
 model adapter -> structured Prediction
       |
 reliability metrics + failure table
+      |
+code task -> controlled prompt shift -> guarded test execution
+      |
+pass rate + bootstrap CI + failure taxonomy + stability
       |
 batch error-rate time series
       |

@@ -3,6 +3,16 @@ import unittest
 from pathlib import Path
 
 from shiftwatch.data import load_jsonl
+from shiftwatch.code_evaluation import (
+    FixtureCodeAgent,
+    CodeCandidate,
+    CodeTask,
+    evaluate_code_agent,
+    execute_candidate,
+    load_code_tasks,
+    render_code_prompt,
+    summarize_code,
+)
 from shiftwatch.evaluation import evaluate, summarize, write_csv
 from shiftwatch.models import KeywordBaseline
 from shiftwatch.llm import parse_structured_response
@@ -138,6 +148,55 @@ class LLMEvaluationTest(unittest.TestCase):
         row = evaluate_llm(model, [case])[0]
         self.assertTrue(row.semantic_abstention)
         self.assertTrue(row.correct)
+
+
+class CodeAgentEvaluationTest(unittest.TestCase):
+    def test_fixture_runs_repeated_controlled_conditions(self):
+        tasks = load_code_tasks(ROOT / "datasets/code_tasks_demo.jsonl")
+        rows = evaluate_code_agent(FixtureCodeAgent(), tasks, repeats=3)
+        self.assertEqual(len(rows), 4 * 4 * 3)
+        summary = summarize_code(rows)
+        self.assertEqual(summary["tasks"], 4)
+        self.assertEqual(summary["runs"], 48)
+        self.assertEqual(summary["conditions"]["clean"]["pass_rate"], 1.0)
+        self.assertLess(summary["conditions"]["false_premise"]["pass_rate"], 1.0)
+
+    def test_prompt_conditions_are_distinct(self):
+        task = load_code_tasks(ROOT / "datasets/code_tasks_demo.jsonl")[0]
+        prompts = {
+            condition: render_code_prompt(task, condition)
+            for condition in ("clean", "irrelevant_context", "false_premise", "long_context")
+        }
+        self.assertEqual(len(set(prompts.values())), 4)
+        self.assertGreater(len(prompts["long_context"]), len(prompts["clean"]) * 10)
+
+    def test_executor_rejects_imports_before_running(self):
+        task = CodeTask(
+            id="unsafe",
+            prompt="unsafe",
+            entry_point="solve",
+            tests=("solve() == 1",),
+            false_premise="none",
+            fixture_candidates={},
+        )
+        result = execute_candidate(
+            task, CodeCandidate("import os\ndef solve():\n    return 1")
+        )
+        self.assertFalse(result.passed)
+        self.assertEqual(result.error_type, "policy_rejection")
+
+    def test_executor_classifies_assertion_failure(self):
+        task = CodeTask(
+            id="wrong",
+            prompt="wrong",
+            entry_point="solve",
+            tests=("solve() == 2",),
+            false_premise="none",
+            fixture_candidates={},
+        )
+        result = execute_candidate(task, CodeCandidate("def solve():\n    return 1"))
+        self.assertFalse(result.passed)
+        self.assertEqual(result.error_type, "assertion_failure")
 
 
 if __name__ == "__main__":

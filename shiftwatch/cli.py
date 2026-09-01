@@ -5,6 +5,15 @@ from .data import load_jsonl
 from .evaluation import evaluate, summarize, write_csv
 from .models import KeywordBaseline
 from .monitoring import load_batch_metrics, monitor, write_alarms
+from .code_evaluation import (
+    CONDITIONS,
+    FixtureCodeAgent,
+    OllamaCodeAgent,
+    evaluate_code_agent,
+    load_code_tasks,
+    summarize_code,
+    write_code_csv,
+)
 from .llm import OllamaLLM
 from .llm_evaluation import (
     evaluate_llm,
@@ -37,6 +46,19 @@ def build_parser() -> argparse.ArgumentParser:
     llm_parser.add_argument("--base-url", default="http://localhost:11434")
     llm_parser.add_argument("--response-mode", choices=("short", "free"), default="short")
     llm_parser.add_argument("--output", default="results/llm_evaluation.csv")
+
+    code_parser = commands.add_parser(
+        "code-evaluate", help="evaluate a code agent under controlled prompt shifts"
+    )
+    code_parser.add_argument("dataset", help="HumanEval/MBPP-style local JSONL tasks")
+    code_parser.add_argument("--backend", choices=("fixture", "ollama"), default="fixture")
+    code_parser.add_argument("--model", help="Ollama model name for real generation")
+    code_parser.add_argument("--base-url", default="http://localhost:11434")
+    code_parser.add_argument("--repeats", type=int, default=3)
+    code_parser.add_argument(
+        "--conditions", nargs="+", choices=CONDITIONS, default=list(CONDITIONS)
+    )
+    code_parser.add_argument("--output", default="results/code_evaluation.csv")
 
     monitor_parser = commands.add_parser("monitor", help="monitor an ordered batch error-rate series")
     monitor_parser.add_argument("metrics", help="CSV file with batch_id and error_rate")
@@ -76,6 +98,22 @@ def main(argv=None) -> int:
         rows = evaluate_llm(model, cases)
         write_llm_csv(rows, args.output)
         result = {"summary": summarize_llm(rows), "output": args.output}
+    elif args.command == "code-evaluate":
+        tasks = load_code_tasks(args.dataset)
+        if args.backend == "fixture":
+            agent = FixtureCodeAgent()
+        else:
+            if not args.model:
+                raise SystemExit("--model is required with --backend ollama")
+            agent = OllamaCodeAgent(args.model, base_url=args.base_url)
+        rows = evaluate_code_agent(
+            agent,
+            tasks,
+            conditions=tuple(args.conditions),
+            repeats=args.repeats,
+        )
+        write_code_csv(rows, args.output)
+        result = {"summary": summarize_code(rows), "output": args.output}
     else:
         metrics = load_batch_metrics(args.metrics)
         alarms = monitor(
