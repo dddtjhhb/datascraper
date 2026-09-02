@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import csv
 from pathlib import Path
 
 from shiftwatch.data import load_jsonl
@@ -38,6 +39,7 @@ from shiftwatch.sql_evaluation import (
     summarize_sql,
     write_rows as write_sql_rows,
 )
+from shiftwatch.sql_review import create_review_packet, summarize_completed_review
 
 
 ROOT = Path(__file__).parents[1]
@@ -281,6 +283,62 @@ class SQLDiagnosticEvaluationTest(unittest.TestCase):
         alarms = monitor(series, target=0.10)
         self.assertTrue(alarms)
         self.assertGreaterEqual(alarms[0]["index"], 8)
+
+    def test_review_packet_is_blinded_and_deterministic(self):
+        tasks = load_sql_tasks(ROOT / "datasets/sql_misconceptions_30.jsonl")[:2]
+        rows = evaluate_sql_agent(FixtureSQLAgent(), tasks, ("clean", "false_premise"))
+        with tempfile.TemporaryDirectory() as directory:
+            results = Path(directory) / "results.csv"
+            packet = Path(directory) / "packet.csv"
+            packet_again = Path(directory) / "packet_again.csv"
+            key = Path(directory) / "key.csv"
+            key_again = Path(directory) / "key_again.csv"
+            write_sql_rows(rows, results)
+            create_review_packet(
+                results, ROOT / "datasets/sql_misconceptions_30.jsonl", packet, key, seed=11
+            )
+            create_review_packet(
+                results,
+                ROOT / "datasets/sql_misconceptions_30.jsonl",
+                packet_again,
+                key_again,
+                seed=11,
+            )
+            self.assertEqual(packet.read_text(), packet_again.read_text())
+            header = packet.read_text().splitlines()[0]
+            self.assertNotIn("condition", header)
+            self.assertNotIn("gold_concepts", header)
+            self.assertIn("condition", key.read_text().splitlines()[0])
+
+    def test_completed_review_summary_uses_human_labels(self):
+        tasks = load_sql_tasks(ROOT / "datasets/sql_misconceptions_30.jsonl")[:1]
+        rows = evaluate_sql_agent(FixtureSQLAgent(), tasks, ("clean",))
+        with tempfile.TemporaryDirectory() as directory:
+            results = Path(directory) / "results.csv"
+            packet = Path(directory) / "packet.csv"
+            key = Path(directory) / "key.csv"
+            write_sql_rows(rows, results)
+            create_review_packet(
+                results, ROOT / "datasets/sql_misconceptions_30.jsonl", packet, key
+            )
+            with packet.open(newline="", encoding="utf-8") as file:
+                reviewed = list(csv.DictReader(file))
+            reviewed[0].update({
+                "human_concepts": "null_semantics",
+                "diagnosis_rating": "fully_correct",
+                "leakage_rating": "none",
+                "explanation_quality": "2",
+                "reviewer_confidence": "3",
+                "task_ambiguity": "no",
+            })
+            with packet.open("w", newline="", encoding="utf-8") as file:
+                writer = csv.DictWriter(file, fieldnames=list(reviewed[0]))
+                writer.writeheader()
+                writer.writerows(reviewed)
+            summary = summarize_completed_review(packet, key)
+            self.assertEqual(summary["reviewed"], 1)
+            self.assertEqual(summary["human_adjudicated_concept_precision"], 1.0)
+            self.assertEqual(summary["conditions"]["clean"]["fully_correct_rate"], 1.0)
 
 
 if __name__ == "__main__":

@@ -34,6 +34,7 @@ from .sql_evaluation import (
     summarize_sql,
     write_rows as write_sql_rows,
 )
+from .sql_review import create_review_packet, summarize_completed_review
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -93,6 +94,23 @@ def build_parser() -> argparse.ArgumentParser:
     sql_monitor.add_argument("--concept", required=True)
     sql_monitor.add_argument("--target", type=float, required=True)
     sql_monitor.add_argument("--output", default="results/sql_concept_alarms.csv")
+
+    review_create = commands.add_parser(
+        "sql-review-create", help="create a blinded SQL human-review packet"
+    )
+    review_create.add_argument("results", help="SQL evaluation result CSV")
+    review_create.add_argument("dataset", help="labeled SQL misconception JSONL")
+    review_create.add_argument("--packet", default="reviews/generated/sql_review_packet.csv")
+    review_create.add_argument("--key", default="reviews/generated/sql_review_key.csv")
+    review_create.add_argument("--seed", type=int, default=7)
+    review_create.add_argument("--sample-size", type=int)
+
+    review_summary = commands.add_parser(
+        "sql-review-summarize", help="unblind and summarize a completed SQL review"
+    )
+    review_summary.add_argument("packet", help="completed review packet CSV")
+    review_summary.add_argument("key", help="separate answer-key CSV")
+    review_summary.add_argument("--output", default="results/sql_human_review_summary.json")
 
     monitor_parser = commands.add_parser("monitor", help="monitor an ordered batch error-rate series")
     monitor_parser.add_argument("metrics", help="CSV file with batch_id and error_rate")
@@ -179,6 +197,18 @@ def main(argv=None) -> int:
             "alarms": alarms,
             "output": args.output,
         }
+    elif args.command == "sql-review-create":
+        result = create_review_packet(
+            args.results,
+            args.dataset,
+            args.packet,
+            args.key,
+            seed=args.seed,
+            sample_size=args.sample_size,
+        )
+    elif args.command == "sql-review-summarize":
+        result = summarize_completed_review(args.packet, args.key, args.output)
+        result["output"] = args.output
     else:
         metrics = load_batch_metrics(args.metrics)
         alarms = monitor(

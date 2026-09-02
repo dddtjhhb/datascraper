@@ -125,6 +125,8 @@ This is currently a research extension and evaluation scaffold, not a completed 
 
 A 20-diagnosis Llama 3 smoke test on the first five cases validated the closed-vocabulary path and produced zero detected answer leakage. See [`docs/sql_diagnostic_smoke_analysis.md`](docs/sql_diagnostic_smoke_analysis.md) for the preliminary metrics, the initial label-mismatch failure, and limitations. The bundled `demo_sql_concept_history.csv` is synthetic data used only to verify that concept-level degradation reaches CUSUM/EWMA.
 
+Automated exact-label and leakage checks are only screening tools. The human-review path creates a randomly ordered packet that hides task ids, perturbation conditions, benchmark labels, and model identity. A reviewer records semantic concept labels, overall correctness, answer leakage, explanation quality, ambiguity, and confidence before a separate key is used to unblind and summarize the study. See [`docs/sql_human_review_protocol.md`](docs/sql_human_review_protocol.md) for the rubric and commands.
+
 ## Architecture
 
 ```text
