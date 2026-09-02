@@ -26,6 +26,18 @@ from shiftwatch.llm_evaluation import (
 )
 from shiftwatch.monitoring import cusum, ewma, load_batch_metrics, monitor, write_alarms
 from shiftwatch.perturbations import apply
+from shiftwatch.sql_evaluation import (
+    FixtureSQLAgent,
+    SQLDiagnosis,
+    SQLTask,
+    concept_metrics,
+    evaluate_sql_agent,
+    load_concept_series,
+    load_sql_tasks,
+    render_sql_prompt,
+    summarize_sql,
+    write_rows as write_sql_rows,
+)
 
 
 ROOT = Path(__file__).parents[1]
@@ -197,6 +209,78 @@ class CodeAgentEvaluationTest(unittest.TestCase):
         result = execute_candidate(task, CodeCandidate("def solve():\n    return 1"))
         self.assertFalse(result.passed)
         self.assertEqual(result.error_type, "assertion_failure")
+
+
+class SQLDiagnosticEvaluationTest(unittest.TestCase):
+    def test_dataset_has_30_labeled_cases(self):
+        tasks = load_sql_tasks(ROOT / "datasets/sql_misconceptions_30.jsonl")
+        self.assertEqual(len(tasks), 30)
+        self.assertEqual(len({task.id for task in tasks}), 30)
+        self.assertTrue(all(task.concepts for task in tasks))
+
+    def test_fixture_reports_concept_metrics_across_four_conditions(self):
+        tasks = load_sql_tasks(ROOT / "datasets/sql_misconceptions_30.jsonl")
+        rows = evaluate_sql_agent(FixtureSQLAgent(), tasks)
+        self.assertEqual(len(rows), 120)
+        summary = summarize_sql(rows)
+        self.assertEqual(summary["tasks"], 30)
+        self.assertEqual(summary["diagnoses"], 120)
+        self.assertEqual(summary["conditions"]["clean"]["concept_micro_recall"], 1.0)
+        self.assertLess(
+            summary["conditions"]["false_premise"]["concept_micro_recall"], 1.0
+        )
+
+    def test_answer_leakage_detects_corrected_sql(self):
+        task = SQLTask(
+            id="sql-99",
+            query="SELECT * FROM t WHERE x = NULL;",
+            concepts=("null_semantics",),
+            leakage_terms=("is null",),
+            explanation="missing values use three-valued logic",
+        )
+
+        class LeakingAgent:
+            def diagnose(self, task, prompt, condition):
+                return SQLDiagnosis(
+                    ("null_semantics",), "Use IS NULL.", None, 0.9, False
+                )
+
+        row = evaluate_sql_agent(LeakingAgent(), [task], ("clean",))[0]
+        self.assertTrue(row.leaked_answer)
+
+    def test_prompt_perturbations_preserve_query(self):
+        task = load_sql_tasks(ROOT / "datasets/sql_misconceptions_30.jsonl")[0]
+        vocabulary = tuple(sorted({
+            concept
+            for sql_task in load_sql_tasks(ROOT / "datasets/sql_misconceptions_30.jsonl")
+            for concept in sql_task.concepts
+        }))
+        prompts = [render_sql_prompt(task, condition, vocabulary) for condition in (
+            "clean", "paraphrase", "irrelevant_context", "false_premise"
+        )]
+        self.assertEqual(len(set(prompts)), 4)
+        self.assertTrue(all(task.query in prompt for prompt in prompts))
+        self.assertTrue(all("closed vocabulary" in prompt for prompt in prompts))
+
+    def test_concept_metrics_connect_to_monitoring_series(self):
+        tasks = load_sql_tasks(ROOT / "datasets/sql_misconceptions_30.jsonl")
+        rows = evaluate_sql_agent(FixtureSQLAgent(), tasks, ("clean",))
+        records = concept_metrics(rows, "model-v1")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "concepts.csv"
+            write_sql_rows(records, path)
+            concept = records[0]["concept"]
+            series = load_concept_series(path, concept)
+            self.assertEqual(series[0].batch_id, "model-v1")
+            self.assertGreaterEqual(series[0].error_rate, 0.0)
+
+    def test_sql_concept_degradation_triggers_monitor(self):
+        series = load_concept_series(
+            ROOT / "datasets/demo_sql_concept_history.csv", "null_semantics"
+        )
+        alarms = monitor(series, target=0.10)
+        self.assertTrue(alarms)
+        self.assertGreaterEqual(alarms[0]["index"], 8)
 
 
 if __name__ == "__main__":

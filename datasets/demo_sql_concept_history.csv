@@ -1,0 +1,13 @@
+snapshot_id,concept,error_rate
+prompt-v1,null_semantics,0.10
+prompt-v2,null_semantics,0.08
+prompt-v3,null_semantics,0.12
+prompt-v4,null_semantics,0.10
+prompt-v5,null_semantics,0.09
+prompt-v6,null_semantics,0.11
+prompt-v7,null_semantics,0.10
+prompt-v8,null_semantics,0.12
+prompt-v9,null_semantics,0.48
+prompt-v10,null_semantics,0.52
+prompt-v11,null_semantics,0.50
+prompt-v12,null_semantics,0.55

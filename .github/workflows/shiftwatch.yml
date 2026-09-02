@@ -26,6 +26,8 @@ on:
           - evaluate
           - llm-evaluate
           - code-evaluate
+          - sql-evaluate
+          - sql-monitor
           - monitor
       target_error_rate:
         description: "Expected error rate for monitoring"
@@ -81,6 +83,17 @@ jobs:
               --backend fixture \
               --repeats 3 \
               --output results/code_evaluation.csv | tee run-output.json
+          elif [ "$TASK" = "sql-evaluate" ]; then
+            python -m shiftwatch.cli sql-evaluate datasets/sql_misconceptions_30.jsonl \
+              --backend fixture \
+              --snapshot-id github-fixture \
+              --output results/sql_evaluation.csv \
+              --concept-output results/sql_concept_metrics.csv | tee run-output.json
+          elif [ "$TASK" = "sql-monitor" ]; then
+            python -m shiftwatch.cli sql-monitor datasets/demo_sql_concept_history.csv \
+              --concept null_semantics \
+              --target 0.10 \
+              --output results/sql_concept_alarms.csv | tee run-output.json
           else
             python -m shiftwatch.cli monitor datasets/demo_batch_metrics.csv \
               --target "$TARGET_ERROR_RATE" \

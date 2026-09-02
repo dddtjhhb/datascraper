@@ -23,6 +23,17 @@ from .llm_evaluation import (
     summarize_llm,
     write_llm_csv,
 )
+from .sql_evaluation import (
+    SQL_CONDITIONS,
+    FixtureSQLAgent,
+    OllamaSQLAgent,
+    concept_metrics,
+    evaluate_sql_agent,
+    load_sql_tasks,
+    load_concept_series,
+    summarize_sql,
+    write_rows as write_sql_rows,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -59,6 +70,29 @@ def build_parser() -> argparse.ArgumentParser:
         "--conditions", nargs="+", choices=CONDITIONS, default=list(CONDITIONS)
     )
     code_parser.add_argument("--output", default="results/code_evaluation.csv")
+
+    sql_parser = commands.add_parser(
+        "sql-evaluate", help="evaluate conceptual SQL error diagnosis without answer leakage"
+    )
+    sql_parser.add_argument("dataset", help="labeled SQL misconception JSONL")
+    sql_parser.add_argument("--backend", choices=("fixture", "ollama"), default="fixture")
+    sql_parser.add_argument("--model", help="Ollama model name for real diagnosis")
+    sql_parser.add_argument("--base-url", default="http://localhost:11434")
+    sql_parser.add_argument(
+        "--conditions", nargs="+", choices=SQL_CONDITIONS, default=list(SQL_CONDITIONS)
+    )
+    sql_parser.add_argument("--snapshot-id", default="local-run")
+    sql_parser.add_argument("--max-tasks", type=int, help="optional smoke-test task limit")
+    sql_parser.add_argument("--output", default="results/sql_evaluation.csv")
+    sql_parser.add_argument("--concept-output", default="results/sql_concept_metrics.csv")
+
+    sql_monitor = commands.add_parser(
+        "sql-monitor", help="monitor one SQL concept's recall error across snapshots"
+    )
+    sql_monitor.add_argument("metrics", help="accumulated SQL concept-metrics CSV")
+    sql_monitor.add_argument("--concept", required=True)
+    sql_monitor.add_argument("--target", type=float, required=True)
+    sql_monitor.add_argument("--output", default="results/sql_concept_alarms.csv")
 
     monitor_parser = commands.add_parser("monitor", help="monitor an ordered batch error-rate series")
     monitor_parser.add_argument("metrics", help="CSV file with batch_id and error_rate")
@@ -114,6 +148,37 @@ def main(argv=None) -> int:
         )
         write_code_csv(rows, args.output)
         result = {"summary": summarize_code(rows), "output": args.output}
+    elif args.command == "sql-evaluate":
+        tasks = load_sql_tasks(args.dataset)
+        if args.max_tasks is not None:
+            if args.max_tasks < 1:
+                raise SystemExit("--max-tasks must be positive")
+            tasks = tasks[:args.max_tasks]
+        if args.backend == "fixture":
+            agent = FixtureSQLAgent()
+        else:
+            if not args.model:
+                raise SystemExit("--model is required with --backend ollama")
+            agent = OllamaSQLAgent(args.model, base_url=args.base_url)
+        rows = evaluate_sql_agent(agent, tasks, tuple(args.conditions))
+        write_sql_rows(rows, args.output)
+        write_sql_rows(concept_metrics(rows, args.snapshot_id), args.concept_output)
+        result = {
+            "summary": summarize_sql(rows),
+            "output": args.output,
+            "concept_output": args.concept_output,
+        }
+    elif args.command == "sql-monitor":
+        metrics = load_concept_series(args.metrics, args.concept)
+        alarms = monitor(metrics, target=args.target)
+        write_alarms(alarms, args.output)
+        result = {
+            "concept": args.concept,
+            "snapshots": len(metrics),
+            "target": args.target,
+            "alarms": alarms,
+            "output": args.output,
+        }
     else:
         metrics = load_batch_metrics(args.metrics)
         alarms = monitor(

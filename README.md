@@ -92,6 +92,39 @@ An initial 16-generation local Llama 3 smoke test passed 4/4 clean, 4/4 irreleva
 
 Generated code is untrusted. ShiftWatch rejects imports, dynamic evaluation, file access calls, dunder attributes, and missing entry points before execution. Accepted candidates run with isolated Python, a temporary working directory, a wall-clock timeout, and best-effort Unix resource limits. These controls reduce risk but are **not a security boundary**. Do not run untrusted model output on a personal or production machine; use a disposable container or VM for real benchmark runs.
 
+## SQL misconception diagnosis
+
+The SQL extension evaluates whether a model can identify the underlying concept gap in a semantically incorrect query without giving away corrected SQL. The versioned starter set contains 30 labeled cases spanning NULL semantics, grouping, aggregation grain, join multiplicity, window frames, subquery cardinality, boolean precedence, temporal boundaries, alias scope, set semantics, and data-modification safety.
+
+Each query is evaluated under clean, paraphrased, irrelevant-context, and false-premise instructions. The model returns structured concept labels, a high-level hint, confidence, and abstention while `suggested_sql` must remain null.
+
+```bash
+python scripts/build_sql_benchmark.py
+python -m shiftwatch.cli sql-evaluate datasets/sql_misconceptions_30.jsonl \
+  --backend fixture --snapshot-id fixture-v1 \
+  --output results/sql_evaluation.csv \
+  --concept-output results/sql_concept_metrics.csv
+
+# Small real-model smoke test
+python -m shiftwatch.cli sql-evaluate datasets/sql_misconceptions_30.jsonl \
+  --backend ollama --model llama3:latest --max-tasks 5 \
+  --snapshot-id llama3-smoke
+```
+
+The report includes concept-level micro precision/recall, answer-leakage rate, abstention, latency, cost, and exact error-attribution consistency across prompt conditions. Leakage is flagged when a model fills `suggested_sql`, emits a code block, or includes a task-specific repair fragment.
+
+`sql_concept_metrics.csv` exports recall error by concept and snapshot. After appending ordered model or prompt snapshots, one concept can be monitored with the existing sequential detectors:
+
+```bash
+python -m shiftwatch.cli sql-monitor results/sql_concept_metrics_history.csv \
+  --concept null_semantics --target 0.10 \
+  --output results/sql_null_semantics_alarms.csv
+```
+
+This is currently a research extension and evaluation scaffold, not a completed comparative study. Before making research claims, the labels and leakage rubrics require independent review, multiple model or prompt configurations, repeated runs, and manual adjudication of disagreements.
+
+A 20-diagnosis Llama 3 smoke test on the first five cases validated the closed-vocabulary path and produced zero detected answer leakage. See [`docs/sql_diagnostic_smoke_analysis.md`](docs/sql_diagnostic_smoke_analysis.md) for the preliminary metrics, the initial label-mismatch failure, and limitations. The bundled `demo_sql_concept_history.csv` is synthetic data used only to verify that concept-level degradation reaches CUSUM/EWMA.
+
 ## Architecture
 
 ```text
